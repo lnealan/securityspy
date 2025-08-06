@@ -41,6 +41,11 @@ PROCESSED_EVENT_EMPTY = {
     "event_score_human": 0,
     "event_score_vehicle": 0,
     "event_score_animal": 0,
+    "trigger_type": None,
+    "trigger_reasons": [],
+    "motion_capture_on": False,
+    "action_on": False,
+    "classification_on": False,
 }
 
 REASON_CODES = {"128": "Human", "256": "Vehicle", "512": "Animal"}
@@ -246,6 +251,10 @@ def process_event(event):
     event_score_human = 0 if not event.get("event_score_human") else event.get("event_score_human")
     event_score_vehicle = 0 if not event.get("event_score_vehicle") else event.get("event_score_vehicle")
     event_score_animal = 0 if not event.get("event_score_animal") else event.get("event_score_animal")
+    
+    # New fields for enhanced event processing
+    trigger_type = event.get("trigger_type")
+    trigger_reasons = event.get("trigger_reasons", [])
 
     event_length = 0
     start_time = None
@@ -271,12 +280,34 @@ def process_event(event):
         "event_score_vehicle": event_score_vehicle,
         "event_score_animal": event_score_animal,
         "event_online": event_online,
+        # New fields for multiple sensor support
+        "trigger_type": trigger_type,
+        "trigger_reasons": trigger_reasons,
+        "motion_capture_on": False,
+        "action_on": False,
+        "classification_on": False,
     }
 
-    if event_type in (EVENT_MOTION, EVENT_SMART_DETECT_ZONE):
+    # Handle different event types for different sensors
+    if event_type == "motion" and not end:
+        # Raw motion sensor
+        processed_event["event_on"] = True
         processed_event["last_motion"] = start_time
-        if not end:
-            processed_event["event_on"] = True
+    elif event_type == "motion_capture" and not end:
+        # Motion capture sensor (TRIGGER_M)
+        processed_event["motion_capture_on"] = True
+        processed_event["last_motion"] = start_time
+    elif event_type == "action" and not end:
+        # Action sensor (TRIGGER_A)
+        processed_event["action_on"] = True
+    elif event_type == "classification":
+        # Classification sensor (CLASSIFY with thresholds)
+        # Check if any score is above a minimum threshold (can be configured later)
+        min_threshold = 50  # Default threshold, can be made configurable
+        if (int(event_score_human or 0) >= min_threshold or 
+            int(event_score_vehicle or 0) >= min_threshold or 
+            int(event_score_animal or 0) >= min_threshold):
+            processed_event["classification_on"] = True
 
     return processed_event
 

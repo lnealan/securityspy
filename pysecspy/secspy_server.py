@@ -10,7 +10,7 @@ import aiohttp
 import xmltodict
 from aiohttp import client_exceptions
 
-from pysecspy.const import (
+from .const import (
     CAMERA_MESSAGES,
     DEVICE_UPDATE_INTERVAL_SECONDS,
     EVENT_MESSAGES,
@@ -20,9 +20,10 @@ from pysecspy.const import (
     SERVER_ID,
     SERVER_NAME,
     WEBSOCKET_CHECK_INTERVAL_SECONDS,
+    parse_trigger_reasons,
 )
-from pysecspy.errors import RequestError
-from pysecspy.secspy_data import (
+from .errors import RequestError
+from .secspy_data import (
     PROCESSED_EVENT_EMPTY,
     SecspyDeviceStateMachine,
     SecspyEventStateMachine,
@@ -533,14 +534,41 @@ class SecSpyServer:
 
             if action_key == "TRIGGER_M":
                 self.global_event_object = action_array[4]
+                # Parse trigger reasons from the reason code
+                trigger_reasons = parse_trigger_reasons(self.global_event_object)
                 data_json = {
-                    "type": "motion",
+                    "type": "motion_capture",  # Distinguish from raw motion
                     "start": action_array[0],
                     "camera": action_array[2],
                     "reason": self.global_event_object,
+                    "trigger_type": "recording",
+                    "trigger_reasons": trigger_reasons,
                     "event_score_human": self.global_event_score_human,
                     "event_score_vehicle": self.global_event_score_vehicle,
+                    "event_score_animal": self.global_event_score_animal,
                     "isMotionDetected": True,
+                    "isOnline": True,
+                }
+                action_json = {
+                    "modelKey": "event",
+                    "action": "add",
+                    "id": action_array[2],
+                }
+
+            if action_key == "TRIGGER_A":
+                # Action trigger event
+                reason_code = action_array[4] if len(action_array) > 4 else "0"
+                trigger_reasons = parse_trigger_reasons(reason_code)
+                data_json = {
+                    "type": "action",
+                    "start": action_array[0],
+                    "camera": action_array[2],
+                    "reason": reason_code,
+                    "trigger_type": "action",
+                    "trigger_reasons": trigger_reasons,
+                    "event_score_human": self.global_event_score_human,
+                    "event_score_vehicle": self.global_event_score_vehicle,
+                    "event_score_animal": self.global_event_score_animal,
                     "isOnline": True,
                 }
                 action_json = {
@@ -628,7 +656,7 @@ class SecSpyServer:
                 #             self.global_event_score_vehicle = action_array[5]
 
                 data_json = {
-                    "type": "motion",
+                    "type": "classification",
                     "start": action_array[0],
                     "camera": action_array[2],
                     "reason": self.global_event_object,
@@ -692,6 +720,14 @@ class SecSpyServer:
 
         if device_id is None:
             return
+
+        # Check if camera is armed for motion detection before processing motion events
+        camera_data = self._processed_data.get(device_id, {})
+        if processed_event.get("event_type") == "motion":
+            # Only process motion events if motion recording is armed
+            if not camera_data.get("recording_mode_m", False):
+                _LOGGER.debug("Skipping motion event for disarmed camera %s", device_id)
+                return
 
         _LOGGER.debug("Procesed event: %s", processed_event)
 
