@@ -5,7 +5,7 @@ from homeassistant.const import (
     ATTR_ENTITY_ID,
     CONF_FILENAME,
 )
-from pysecspy.const import (
+from .pysecspy.const import (
     RECORDING_TYPE_ACTION,
     RECORDING_TYPE_MOTION,
     RECORDING_TYPE_CONTINUOUS,

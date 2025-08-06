@@ -43,6 +43,24 @@ BINARY_SENSORS: tuple[SecSpyBinaryEntityDescription, ...] = (
         trigger_field="event_on",
     ),
     SecSpyBinaryEntityDescription(
+        key="motion_capture",
+        name="Motion Capture",
+        device_class=BinarySensorDeviceClass.MOTION,
+        trigger_field="motion_capture_on",
+    ),
+    SecSpyBinaryEntityDescription(
+        key="action",
+        name="Action",
+        device_class=BinarySensorDeviceClass.MOTION,
+        trigger_field="action_on",
+    ),
+    SecSpyBinaryEntityDescription(
+        key="classification",
+        name="Classification",
+        device_class=BinarySensorDeviceClass.MOTION,
+        trigger_field="classification_on",
+    ),
+    SecSpyBinaryEntityDescription(
         key="online",
         icon="mdi:access-point-network",
         name="Online",
