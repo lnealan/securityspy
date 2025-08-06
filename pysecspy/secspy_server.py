@@ -533,55 +533,27 @@ class SecSpyServer:
                 }
 
             if action_key == "TRIGGER_M":
-                self.global_event_object = action_array[4]
-                # Parse trigger reasons from the reason code
-                trigger_reasons = parse_trigger_reasons(self.global_event_object)
-                data_json = {
-                    "type": "motion_capture",  # Distinguish from raw motion
-                    "start": action_array[0],
-                    "camera": action_array[2],
-                    "reason": self.global_event_object,
-                    "trigger_type": "recording",
-                    "trigger_reasons": trigger_reasons,
-                    "event_score_human": self.global_event_score_human,
-                    "event_score_vehicle": self.global_event_score_vehicle,
-                    "event_score_animal": self.global_event_score_animal,
-                    "isMotionDetected": True,
-                    "isOnline": True,
-                }
-                action_json = {
-                    "modelKey": "event",
-                    "action": "add",
-                    "id": action_array[2],
-                }
+                # Skip TRIGGER_M events - we only want raw MOTION events for the baseline sensor
+                _LOGGER.debug("Skipping TRIGGER_M event (using only raw MOTION events)")
+                return
 
             if action_key == "TRIGGER_A":
-                # Action trigger event
-                reason_code = action_array[4] if len(action_array) > 4 else "0"
-                trigger_reasons = parse_trigger_reasons(reason_code)
-                data_json = {
-                    "type": "action",
-                    "start": action_array[0],
-                    "camera": action_array[2],
-                    "reason": reason_code,
-                    "trigger_type": "action",
-                    "trigger_reasons": trigger_reasons,
-                    "event_score_human": self.global_event_score_human,
-                    "event_score_vehicle": self.global_event_score_vehicle,
-                    "event_score_animal": self.global_event_score_animal,
-                    "isOnline": True,
-                }
-                action_json = {
-                    "modelKey": "event",
-                    "action": "add",
-                    "id": action_array[2],
-                }
+                # Skip TRIGGER_A events - don't create motion sensor events for actions
+                _LOGGER.debug("Skipping TRIGGER_A event (actions don't affect motion sensor)")
+                return
 
             if action_key == "MOTION":
+                # Check if motion recording is armed for the original motion sensor
+                camera_id = action_array[2]
+                camera_data = self._processed_data.get(camera_id, {})
+                if not camera_data.get("recording_mode_m", False):
+                    _LOGGER.debug("Skipping MOTION event for disarmed camera %s", camera_id)
+                    return
+                
                 data_json = {
                     "type": "motion",
                     "start": action_array[0],
-                    "camera": action_array[2],
+                    "camera": camera_id,
                     "reason": self.global_event_object,
                     "event_score_human": self.global_event_score_human,
                     "event_score_vehicle": self.global_event_score_vehicle,
@@ -591,7 +563,7 @@ class SecSpyServer:
                 action_json = {
                     "modelKey": "event",
                     "action": "add",
-                    "id": action_array[2],
+                    "id": camera_id,
                 }
 
             if action_key == "MOTION_END":
@@ -617,7 +589,7 @@ class SecSpyServer:
             if action_key == "CLASSIFY":
                 # Format: 20220828102950 69 0 CLASSIFY HUMAN 2 VEHICLE 1 ANIMAL 0
                 _LOGGER.debug("CLASSIFY: %s", action_array)
-                # Need to put this is, as animal reuires SS V5.5
+                # Process AI classification scores for detected object sensor and motion sensor attributes
                 try:
                     self.global_event_score_human = action_array[5]
                     self.global_event_score_vehicle = action_array[7]
@@ -633,43 +605,22 @@ class SecSpyServer:
                         self.global_event_object = "256"
                     if (self.global_event_score_animal > self.global_event_score_human) and (self.global_event_score_animal > self.global_event_score_vehicle):
                         self.global_event_object = "512"
-
-                # if len(action_array) > 6:
-                #     self.global_event_score_human = action_array[5]
-                #     self.global_event_score_vehicle = action_array[7]
-                #     if self.global_event_score_human > self.global_event_score_vehicle:
-                #         self.global_event_object = "128"
-                #     else:
-                #         self.global_event_object = "256"
-                # else:
-                #     if "HUMAN" or "VEHICLE" or "ANIMAL" not in action_array:
-                #         self.global_event_object = None
-                #         self.global_event_score_human = 0
-                #         self.global_event_score_vehicle = 0
-                #     else:
-                #         self.global_event_object = "128"
-                #         self.global_event_score_human = action_array[5]
-                #         self.global_event_score_vehicle = 0
-                #         if "HUMAN" not in action_array:
-                #             self.global_event_object = "256"
-                #             self.global_event_score_human = 0
-                #             self.global_event_score_vehicle = action_array[5]
-
-                data_json = {
-                    "type": "classification",
-                    "start": action_array[0],
-                    "camera": action_array[2],
-                    "reason": self.global_event_object,
-                    "event_score_human": self.global_event_score_human,
-                    "event_score_vehicle": self.global_event_score_vehicle,
-                    "event_score_animal": self.global_event_score_animal,
-                    "isOnline": True,
-                }
-                action_json = {
-                    "modelKey": "event",
-                    "action": "add",
-                    "id": action_array[2],
-                }
+                
+                # Update detected object sensor with new classification data
+                camera_id = action_array[2]
+                if camera_id in self._processed_data:
+                    self._processed_data[camera_id].update({
+                        "event_object": "None" if self.global_event_object not in ["128", "256", "512"] else {"128": "Human", "256": "Vehicle", "512": "Animal"}[self.global_event_object],
+                        "event_score_human": self.global_event_score_human,
+                        "event_score_vehicle": self.global_event_score_vehicle,
+                        "event_score_animal": self.global_event_score_animal,
+                    })
+                    
+                    # Notify subscribers of the updated classification data
+                    for subscriber in self._ws_subscriptions:
+                        subscriber({camera_id: self._processed_data[camera_id]})
+                
+                return  # Don't create classification events, just update the data
 
             self._process_event_ws_message(action_json, data_json)
             return
@@ -688,27 +639,14 @@ class SecSpyServer:
         if camera_id is None:
             return
 
-        if not processed_camera["recording_mode_m"]:
-            processed_event = camera_event_from_ws_frames(
-                self._device_state_machine, action_json, data_json
-            )
-            if processed_event is not None:
-                _LOGGER.debug("Processed camera motion event: %s", processed_event)
-                processed_camera.update(processed_event)
-        if not processed_camera["recording_mode_c"]:
-            processed_event = camera_event_from_ws_frames(
-                self._device_state_machine, action_json, data_json
-            )
-            if processed_event is not None:
-                _LOGGER.debug("Processed camera continuous event: %s", processed_event)
-                processed_camera.update(processed_event)
-        if not processed_camera["recording_mode_a"]:
-            processed_event = camera_event_from_ws_frames(
-                self._device_state_machine, action_json, data_json
-            )
-            if processed_event is not None:
-                _LOGGER.debug("Processed camera action event: %s", processed_event)
-                processed_camera.update(processed_event)
+        # Always process camera events for raw motion detection
+        # The armed state filtering is handled at the TRIGGER_M/TRIGGER_A level
+        processed_event = camera_event_from_ws_frames(
+            self._device_state_machine, action_json, data_json
+        )
+        if processed_event is not None:
+            _LOGGER.debug("Processed camera event: %s", processed_event)
+            processed_camera.update(processed_event)
 
         self.fire_event(camera_id, processed_camera)
 
@@ -720,14 +658,6 @@ class SecSpyServer:
 
         if device_id is None:
             return
-
-        # Check if camera is armed for motion detection before processing motion events
-        camera_data = self._processed_data.get(device_id, {})
-        if processed_event.get("event_type") == "motion":
-            # Only process motion events if motion recording is armed
-            if not camera_data.get("recording_mode_m", False):
-                _LOGGER.debug("Skipping motion event for disarmed camera %s", device_id)
-                return
 
         _LOGGER.debug("Procesed event: %s", processed_event)
 
