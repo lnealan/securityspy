@@ -534,24 +534,27 @@ class SecSpyServer:
                 }
 
             if action_key == "TRIGGER_M":
-                # Process TRIGGER_M events for motion sensor with reason tracking
+                # Use TRIGGER_M as motion start when recording is armed
                 camera_id = action_array[2]
                 camera_data = self._processed_data.get(camera_id, {})
                 if not camera_data.get("recording_mode_m", False):
                     _LOGGER.debug("Skipping TRIGGER_M event for disarmed camera %s", camera_id)
                     return
-                
+
                 # Extract and parse the reason code (action_array[4])
                 reason_code = None
                 if len(action_array) > 4:
                     reason_code = action_array[4]
-                
+
                 from .const import parse_trigger_reasons
                 trigger_reasons = parse_trigger_reasons(reason_code)
-                
+
+                event_id = f"motion_{camera_id}"
+                existing = self._event_state_machine.get(event_id)
+                is_active = bool(existing and not existing.get("end"))
+
                 data_json = {
                     "type": "motion",
-                    "start": action_array[0],
                     "camera": camera_id,
                     "reason": reason_code,
                     "trigger_reasons": trigger_reasons,
@@ -561,10 +564,13 @@ class SecSpyServer:
                     "isMotionDetected": True,
                     "isOnline": True,
                 }
+                if not is_active:
+                    data_json["start"] = action_array[0]
+
                 action_json = {
                     "modelKey": "event",
-                    "action": "add",
-                    "id": f"motion_{camera_id}",
+                    "action": "update" if is_active else "add",
+                    "id": event_id,
                 }
 
             if action_key == "TRIGGER_A":
@@ -655,22 +661,23 @@ class SecSpyServer:
             if action_key == "CLASSIFY":
                 # Format: 20220828102950 69 0 CLASSIFY HUMAN 2 VEHICLE 1 ANIMAL 0
                 _LOGGER.debug("CLASSIFY: %s", action_array)
-                # Process AI classification scores for detected object sensor and motion sensor attributes
+                # Parse as integers for correct comparisons
                 try:
-                    self.global_event_score_human = action_array[5]
-                    self.global_event_score_vehicle = action_array[7]
-                    self.global_event_score_animal = action_array[9]
-                    self.global_event_object = None
-                except:
+                    self.global_event_score_human = int(action_array[5])
+                    self.global_event_score_vehicle = int(action_array[7])
+                    self.global_event_score_animal = int(action_array[9])
+                except Exception:
+                    self.global_event_score_human = 0
+                    self.global_event_score_vehicle = 0
                     self.global_event_score_animal = 0
-                finally:
-                    # Set the Event Object to the highest score
-                    if (self.global_event_score_human > self.global_event_score_vehicle) and (self.global_event_score_human > self.global_event_score_animal):
-                        self.global_event_object = "128"
-                    if (self.global_event_score_vehicle > self.global_event_score_human) and (self.global_event_score_vehicle > self.global_event_score_animal):
-                        self.global_event_object = "256"
-                    if (self.global_event_score_animal > self.global_event_score_human) and (self.global_event_score_animal > self.global_event_score_vehicle):
-                        self.global_event_object = "512"
+                # Determine top object by highest score
+                best = max(
+                    [("128", self.global_event_score_human),
+                     ("256", self.global_event_score_vehicle),
+                     ("512", self.global_event_score_animal)],
+                    key=lambda kv: kv[1],
+                )
+                self.global_event_object = best[0] if best[1] > 0 else None
                 
                 # Update detected object sensor with new classification data
                 camera_id = action_array[2]
@@ -681,7 +688,6 @@ class SecSpyServer:
                         "event_score_vehicle": self.global_event_score_vehicle,
                         "event_score_animal": self.global_event_score_animal,
                     })
-                    
                     # Notify subscribers of the updated classification data
                     for subscriber in self._ws_subscriptions:
                         subscriber({camera_id: self._processed_data[camera_id]})

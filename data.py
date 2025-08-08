@@ -5,6 +5,7 @@ import logging
 import time
 
 from homeassistant.core import callback
+from .const import CONF_MOTION_COOLDOWN
 
 from .pysecspy.errors import RequestError
 
@@ -56,33 +57,39 @@ class SecuritySpyData:
         """Process update from the securityspy data."""
         if isinstance(updates, dict):
             for device_id, data in updates.items():
-                # Debug: log what we're processing
-                if "event_on" in data:
-                    _LOGGER.debug("Processing motion event for %s: event_on=%s, end=%s", device_id, data.get("event_on"), data.get("end"))
-                
+                # Work on a copy to avoid mutating the server's processed_data
+                event = dict(data)
+                if "event_on" in event:
+                    _LOGGER.debug(
+                        "Processing motion event for %s: event_on=%s, end=%s",
+                        device_id,
+                        event.get("event_on"),
+                        event.get("end"),
+                    )
+
                 # Apply motion cooldown if configured (only for motion start events, not end events)
-                if data.get("event_on") and "event_on" in data and not data.get("end"):
+                if event.get("event_on") and not event.get("end"):
                     # Get cooldown setting from config entry options
                     config_entries = self._hass.config_entries.async_entries("securityspy")
                     if config_entries:
-                        cooldown = config_entries[0].options.get("motion_cooldown", 0)
+                        cooldown = config_entries[0].options.get(CONF_MOTION_COOLDOWN, 0)
                         if cooldown > 0:
                             current_time = time.time()
                             last_motion = self._last_motion_times.get(device_id, 0)
-                            if current_time - last_motion < cooldown:
-                                # Skip this motion event due to cooldown
-                                data["event_on"] = False
+                            remaining = cooldown - (current_time - last_motion)
+                            if remaining > 0:
+                                # Suppress notifying subscribers for this update
                                 _LOGGER.debug(
-                                    "Skipping motion for %s due to cooldown (%.1fs remaining)",
+                                    "Suppressing motion for %s due to cooldown (%.1fs remaining)",
                                     device_id,
-                                    cooldown - (current_time - last_motion)
+                                    remaining,
                                 )
-                            else:
-                                # Motion allowed, update last motion time
-                                self._last_motion_times[device_id] = current_time
-                
+                                continue
+                            # Motion allowed, update last motion time
+                            self._last_motion_times[device_id] = current_time
+
                 # Store the data
-                self.data[device_id] = data
+                self.data[device_id] = event
                 self.async_signal_device_id_update(device_id)
         else:
             _LOGGER.debug("TYPES OF UPDATES: %s", type(updates))

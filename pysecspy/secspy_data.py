@@ -358,6 +358,14 @@ class SecspyEventStateMachine:
         """Init the state machine."""
         self._events = FixSizeOrderedDict(max_size=MAX_EVENT_HISTORY_IN_STATE_MACHINE)
 
+    def has(self, event_id):
+        """Return True if state machine has the event id."""
+        return event_id in self._events
+
+    def get(self, event_id):
+        """Get event by id (or None)."""
+        return self._events.get(event_id)
+
     def add(self, event_id, event_json):
         """Add an event to the state machine."""
         _LOGGER.debug("Adding event %s: %s", event_id, event_json)
