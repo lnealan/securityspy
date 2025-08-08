@@ -22,6 +22,8 @@ from .const import (
     ATTR_EVENT_SCORE_ANIMAL,
     ATTR_EVENT_SCORE_HUMAN,
     ATTR_EVENT_SCORE_VEHICLE,
+    ATTR_TRIGGER_REASONS,
+    ATTR_TRIGGER_TYPE,
     DOMAIN,
 )
 from .entity import SecuritySpyEntity
@@ -41,6 +43,12 @@ BINARY_SENSORS: tuple[SecSpyBinaryEntityDescription, ...] = (
         name="Motion",
         device_class=BinarySensorDeviceClass.MOTION,
         trigger_field="event_on",
+    ),
+    SecSpyBinaryEntityDescription(
+        key="action",
+        name="Action",
+        device_class=BinarySensorDeviceClass.MOTION,
+        trigger_field="action_on",
     ),
     SecSpyBinaryEntityDescription(
         key="online",
@@ -110,7 +118,7 @@ class SecuritySpyBinarySensor(SecuritySpyEntity, BinarySensorEntity):
     @property
     def is_on(self):
         """Return true if the binary sensor is on."""
-        return self._device_data[self._description.trigger_field]
+        return self._device_data.get(self._description.trigger_field, False)
 
     @property
     def extra_state_attributes(self):
@@ -118,12 +126,14 @@ class SecuritySpyBinarySensor(SecuritySpyEntity, BinarySensorEntity):
         if self._description.device_class == BinarySensorDeviceClass.MOTION:
             return {
                 **super().extra_state_attributes,
-                ATTR_LAST_TRIP_TIME: self._device_data["last_motion"],
-                ATTR_EVENT_LENGTH: self._device_data["event_length"],
-                ATTR_EVENT_OBJECT: self._device_data["event_object"],
-                ATTR_EVENT_SCORE_ANIMAL: self._device_data[ATTR_EVENT_SCORE_ANIMAL],
-                ATTR_EVENT_SCORE_HUMAN: self._device_data[ATTR_EVENT_SCORE_HUMAN],
-                ATTR_EVENT_SCORE_VEHICLE: self._device_data[ATTR_EVENT_SCORE_VEHICLE],
+                ATTR_LAST_TRIP_TIME: self._device_data.get("last_motion"),
+                ATTR_EVENT_LENGTH: self._device_data.get("event_length"),
+                ATTR_EVENT_OBJECT: self._device_data.get("event_object"),
+                ATTR_EVENT_SCORE_ANIMAL: self._device_data.get(ATTR_EVENT_SCORE_ANIMAL, 0),
+                ATTR_EVENT_SCORE_HUMAN: self._device_data.get(ATTR_EVENT_SCORE_HUMAN, 0),
+                ATTR_EVENT_SCORE_VEHICLE: self._device_data.get(ATTR_EVENT_SCORE_VEHICLE, 0),
+                ATTR_TRIGGER_REASONS: self._device_data.get("trigger_reasons", []),
+                ATTR_TRIGGER_TYPE: self._device_data.get("trigger_type"),
             }
         return {
             **super().extra_state_attributes,

@@ -16,6 +16,7 @@ UNIQUE_ID = "unique_id"
 
 DEFAULT_PORT = 8000
 DEFAULT_MIN_SCORE = 50
+DEFAULT_MOTION_COOLDOWN = 0
 DEFAULT_ATTRIBUTION = "Powered by SecuritySpy Server"
 DEFAULT_BRAND = "Ben Software"
 MIN_SECSPY_VERSION = "5.3.4"
@@ -24,9 +25,11 @@ CONF_MODE = "mode"
 CONF_ENABLED = "enabled"
 CONF_DISABLE_RTSP = "disable_rtsp"
 CONF_MIN_SCORE = "min_event_score"
+CONF_MOTION_COOLDOWN = "motion_cooldown"
 CONFIG_OPTIONS = [
     CONF_DISABLE_RTSP,
     CONF_MIN_SCORE,
+    CONF_MOTION_COOLDOWN,
 ]
 
 ATTR_BRAND = "brand"
@@ -35,6 +38,8 @@ ATTR_EVENT_OBJECT = "event_object"
 ATTR_EVENT_SCORE_ANIMAL = "event_score_animal"
 ATTR_EVENT_SCORE_HUMAN = "event_score_human"
 ATTR_EVENT_SCORE_VEHICLE = "event_score_vehicle"
+ATTR_TRIGGER_REASONS = "trigger_reasons"
+ATTR_TRIGGER_TYPE = "trigger_type"
 ATTR_PRESET_ID = "preset_id"
 ATTR_PTZ_CAPABILITIES = "ptz_capabilities"
 

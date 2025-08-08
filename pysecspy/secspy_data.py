@@ -34,6 +34,7 @@ MAX_EVENT_HISTORY_IN_STATE_MACHINE = MAX_SUPPORTED_CAMERAS * 2
 PROCESSED_EVENT_EMPTY = {
     "event_start": None,
     "event_on": False,
+    "action_on": False,
     "event_type": None,
     "event_online": True,
     "event_length": 0,
@@ -108,6 +109,7 @@ def process_camera(server_id, server_credential, camera, include_events):
         "video_format": str(camera["video-format"]),
         "ptz_capabilities": ptz_capabilities,
         "ptz_presets": preset_list,
+        "action_on": False,  # Initialize action sensor state
     }
 
     if server_id is not None:
@@ -184,8 +186,14 @@ def event_from_ws_frames(state_machine, action_json, data_json):
     elif action == "update":
         event = state_machine.update(event_id, data_json)
         if not event:
-            return None, None
-        device_id = event.get("camera")
+            # If update fails, try add instead (event doesn't exist yet)
+            device_id = data_json.get("camera")
+            if device_id is None:
+                return None, None
+            state_machine.add(event_id, data_json)
+            event = data_json
+        else:
+            device_id = event.get("camera")
     else:
         raise ValueError("The action must be add or update")
 
@@ -258,7 +266,7 @@ def process_event(event):
 
     if start:
         start_time = _process_timestamp(start)
-    if end:
+    if end and start:
         event_length = round(
             (float(end) / 1000) - (float(start) / 1000), EVENT_LENGTH_PRECISION
         )
@@ -281,10 +289,32 @@ def process_event(event):
         "trigger_reasons": trigger_reasons,
     }
 
-    # Handle motion events for the single motion sensor
-    if event_type == "motion" and not end:
+    # Handle motion events via explicit isMotionDetected field (from TRIGGER_M and MOTION_END)
+    if "isMotionDetected" in event:
+        if event["isMotionDetected"]:
+            processed_event["event_on"] = True
+            if start_time:
+                processed_event["last_motion"] = start_time
+        else:
+            processed_event["event_on"] = False
+    # Fallback: Handle motion events for the motion sensor (legacy logic)
+    elif event_type == "motion" and not end:
         processed_event["event_on"] = True
         processed_event["last_motion"] = start_time
+    
+    # Handle action events for the action sensor
+    if event_type == "action" and not end:
+        processed_event["action_on"] = True
+        processed_event["last_action"] = start_time
+    
+    # Handle isActionTriggered field from events (can be True or False)
+    if "isActionTriggered" in event:
+        if event["isActionTriggered"]:
+            processed_event["action_on"] = True
+            if start_time:
+                processed_event["last_action"] = start_time
+        else:
+            processed_event["action_on"] = False
 
     return processed_event
 
@@ -330,6 +360,7 @@ class SecspyEventStateMachine:
 
     def add(self, event_id, event_json):
         """Add an event to the state machine."""
+        _LOGGER.debug("Adding event %s: %s", event_id, event_json)
         self._events[event_id] = event_json
 
     def update(self, event_id, new_event_json):

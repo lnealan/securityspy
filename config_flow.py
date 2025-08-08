@@ -21,8 +21,10 @@ from .pysecspy.const import SERVER_ID, SERVER_NAME
 from .const import (
     CONF_DISABLE_RTSP,
     CONF_MIN_SCORE,
+    CONF_MOTION_COOLDOWN,
     DEFAULT_PORT,
     DEFAULT_MIN_SCORE,
+    DEFAULT_MOTION_COOLDOWN,
     MIN_SECSPY_VERSION,
     DOMAIN,
 )
@@ -98,6 +100,7 @@ class SecuritySpyFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             options={
                 CONF_DISABLE_RTSP: False,
                 CONF_MIN_SCORE: DEFAULT_MIN_SCORE,
+                CONF_MOTION_COOLDOWN: DEFAULT_MOTION_COOLDOWN,
             },
         )
 
@@ -137,6 +140,12 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                         CONF_DISABLE_RTSP,
                         default=self.config_entry.options.get(CONF_DISABLE_RTSP, False),
                     ): bool,
+                    vol.Optional(
+                        CONF_MOTION_COOLDOWN,
+                        default=self.config_entry.options.get(
+                            CONF_MOTION_COOLDOWN, DEFAULT_MOTION_COOLDOWN
+                        ),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=0, max=300)),
                     # vol.Optional(
                     #     CONF_MIN_SCORE,
                     #     default=self.config_entry.options.get(

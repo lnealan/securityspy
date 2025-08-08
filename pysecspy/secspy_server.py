@@ -392,7 +392,8 @@ class SecSpyServer:
 
     def _update_device(self, device_id, processed_update):
         """Update internal state of a device."""
-        self._processed_data.setdefault(device_id, {}).update(processed_update)
+        old_data = self._processed_data.setdefault(device_id, {})
+        old_data.update(processed_update)
 
     def _reset_device_events(self) -> None:
         """Reset device events between device updates."""
@@ -451,7 +452,7 @@ class SecSpyServer:
         """Process websocket messages."""
 
         # pylint: disable=too-many-branches
-        # _LOGGER.debug("MSG: %s", msg)
+        _LOGGER.debug("SecuritySpy WebSocket MSG: %s", msg)
 
         action_array = msg.split(" ")
         action_key = action_array[3]
@@ -533,28 +534,28 @@ class SecSpyServer:
                 }
 
             if action_key == "TRIGGER_M":
-                # Skip TRIGGER_M events - we only want raw MOTION events for the baseline sensor
-                _LOGGER.debug("Skipping TRIGGER_M event (using only raw MOTION events)")
-                return
-
-            if action_key == "TRIGGER_A":
-                # Skip TRIGGER_A events - don't create motion sensor events for actions
-                _LOGGER.debug("Skipping TRIGGER_A event (actions don't affect motion sensor)")
-                return
-
-            if action_key == "MOTION":
-                # Check if motion recording is armed for the original motion sensor
+                # Process TRIGGER_M events for motion sensor with reason tracking
                 camera_id = action_array[2]
                 camera_data = self._processed_data.get(camera_id, {})
                 if not camera_data.get("recording_mode_m", False):
-                    _LOGGER.debug("Skipping MOTION event for disarmed camera %s", camera_id)
+                    _LOGGER.debug("Skipping TRIGGER_M event for disarmed camera %s", camera_id)
                     return
+                
+                # Extract and parse the reason code (action_array[4])
+                reason_code = None
+                if len(action_array) > 4:
+                    reason_code = action_array[4]
+                
+                from .const import parse_trigger_reasons
+                trigger_reasons = parse_trigger_reasons(reason_code)
                 
                 data_json = {
                     "type": "motion",
                     "start": action_array[0],
                     "camera": camera_id,
-                    "reason": self.global_event_object,
+                    "reason": reason_code,
+                    "trigger_reasons": trigger_reasons,
+                    "trigger_type": "recording",
                     "event_score_human": self.global_event_score_human,
                     "event_score_vehicle": self.global_event_score_vehicle,
                     "isMotionDetected": True,
@@ -563,14 +564,57 @@ class SecSpyServer:
                 action_json = {
                     "modelKey": "event",
                     "action": "add",
-                    "id": camera_id,
+                    "id": f"motion_{camera_id}",
                 }
+
+            if action_key == "TRIGGER_A":
+                # Process TRIGGER_A events for action sensor (future enhancement)
+                camera_id = action_array[2]
+                camera_data = self._processed_data.get(camera_id, {})
+                _LOGGER.debug("TRIGGER_A event received for camera %s, actions armed: %s", camera_id, camera_data.get("recording_mode_a", False))
+                if not camera_data.get("recording_mode_a", False):
+                    _LOGGER.debug("Skipping TRIGGER_A event for camera %s with actions disabled", camera_id)
+                    return
+                
+                # Extract and parse the reason code
+                reason_code = None
+                if len(action_array) > 4:
+                    reason_code = action_array[4]
+                
+                from .const import parse_trigger_reasons
+                trigger_reasons = parse_trigger_reasons(reason_code)
+                
+                # For now, create action events separately from motion
+                # In future, this could trigger a separate action binary sensor
+                data_json = {
+                    "type": "action",
+                    "start": action_array[0],
+                    "camera": camera_id,
+                    "reason": reason_code,
+                    "trigger_reasons": trigger_reasons,
+                    "trigger_type": "action",
+                    "isActionTriggered": True,
+                    "isOnline": True,
+                }
+                action_json = {
+                    "modelKey": "event",
+                    "action": "add",
+                    "id": f"action_{camera_id}",
+                }
+
+            if action_key == "MOTION":
+                # Skip raw MOTION events - we use TRIGGER_M for actual motion sensor
+                # Raw motion is too sensitive and doesn't include SecuritySpy's decision logic
+                _LOGGER.debug("Skipping raw MOTION event (using TRIGGER_M instead)")
+                return
 
             if action_key == "MOTION_END":
                 self.global_event_score_human = 0
                 self.global_event_score_vehicle = 0
                 self.global_event_object = None
-                data_json = {
+                
+                # Clear motion sensor
+                motion_data_json = {
                     "type": "motion",
                     "end": action_array[0],
                     "camera": action_array[2],
@@ -580,11 +624,33 @@ class SecSpyServer:
                     "event_score_vehicle": self.global_event_score_vehicle,
                     "isOnline": True,
                 }
-                action_json = {
+                motion_action_json = {
                     "modelKey": "event",
                     "action": "update",
-                    "id": action_array[2],
+                    "id": f"motion_{action_array[2]}",
                 }
+                
+                # Process motion end event
+                self._process_event_ws_message(motion_action_json, motion_data_json)
+                
+                # Clear action sensor
+                action_data_json = {
+                    "type": "action",
+                    "end": action_array[0],
+                    "camera": action_array[2],
+                    "isActionTriggered": False,
+                    "reason": self.global_event_object,
+                    "isOnline": True,
+                }
+                action_action_json = {
+                    "modelKey": "event",
+                    "action": "update",
+                    "id": f"action_{action_array[2]}",
+                }
+                
+                # Process action end event
+                self._process_event_ws_message(action_action_json, action_data_json)
+                return
 
             if action_key == "CLASSIFY":
                 # Format: 20220828102950 69 0 CLASSIFY HUMAN 2 VEHICLE 1 ANIMAL 0
@@ -659,13 +725,17 @@ class SecSpyServer:
         if device_id is None:
             return
 
-        _LOGGER.debug("Procesed event: %s", processed_event)
+        _LOGGER.debug("Processed event for device %s: %s", device_id, processed_event)
 
         self.fire_event(device_id, processed_event)
 
     def fire_event(self, device_id, processed_event):
         """Callback and event to the subscribers and update data."""
+        _LOGGER.debug("fire_event: device %s processed_event=%s", device_id, processed_event)
+        
+        # Update the device data
         self._update_device(device_id, processed_event)
-
+        
+        # Always notify subscribers of the update
         for subscriber in self._ws_subscriptions:
             subscriber({device_id: self._processed_data[device_id]})
