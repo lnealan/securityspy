@@ -611,7 +611,7 @@ class SecSpyServer:
             if action_key == "MOTION":
                 # Skip raw MOTION events - we use TRIGGER_M for actual motion sensor
                 # Raw motion is too sensitive and doesn't include SecuritySpy's decision logic
-                _LOGGER.debug("Skipping raw MOTION event (using TRIGGER_M instead)")
+                _LOGGER.debug("Skipping raw MOTION event")
                 return
 
             if action_key == "MOTION_END":

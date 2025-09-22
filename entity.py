@@ -76,6 +76,11 @@ class SecuritySpyEntity(Entity):
         """When entity is added to hass."""
         self.async_on_remove(
             self.secspy_data.async_subscribe_device_id(
-                self._device_id, self.async_write_ha_state
+                self._device_id, self._update_callback
             )
         )
+    
+    def _update_callback(self):
+        """Update local data and write state."""
+        self._device_data = self.secspy_data.data.get(self._device_id, {})
+        self.async_write_ha_state()
