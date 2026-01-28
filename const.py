@@ -66,6 +66,7 @@ VALID_MODES = [
 SERVICE_DOWNLOAD_LATEST_MOTION_RECORDING = "download_latest_motion_recording"
 SERVICE_ENABLE_SCHEDULE_PRESET = "enable_schedule_preset"
 SERVICE_SET_ARM_MODE = "set_arm_mode"
+SERVICE_TRIGGER_RECORDING = "trigger_recording"
 DOWNLOAD_LATEST_MOTION_RECORDING_SCHEMA = { vol.Required(ATTR_ENTITY_ID): cv.entity_ids, vol.Required(CONF_FILENAME): cv.string,}
 ENABLE_SCHEDULE_PRESET_SCHEMA = vol.Schema(
     {
@@ -73,6 +74,7 @@ ENABLE_SCHEDULE_PRESET_SCHEMA = vol.Schema(
     }
 )
 SET_ARM_MODE_SCHEMA = { vol.Required(ATTR_ENTITY_ID): cv.entity_ids, vol.Required(CONF_MODE): vol.In(VALID_MODES), vol.Required(CONF_ENABLED): cv.boolean,}
+TRIGGER_RECORDING_SCHEMA = {}
 SECURITYSPY_PLATFORMS = [
     "camera",
     "binary_sensor",

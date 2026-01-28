@@ -80,3 +80,10 @@ enable_disable_camera:
       example: "true"
       selector:
         boolean:
+trigger_recording:
+  name: Trigger Recording
+  description: "Manually trigger motion detection/recording for a camera"
+  target:
+    entity:
+      integration: securityspy
+      domain: camera

@@ -19,7 +19,9 @@ from .const import (
     RECORDING_TYPE_MOTION,
     SERVICE_SET_ARM_MODE,
     SERVICE_DOWNLOAD_LATEST_MOTION_RECORDING,
+    SERVICE_TRIGGER_RECORDING,
     SET_ARM_MODE_SCHEMA,
+    TRIGGER_RECORDING_SCHEMA,
 )
 from .entity import SecuritySpyEntity
 
@@ -68,6 +70,13 @@ async def async_setup_entry(
         SERVICE_DOWNLOAD_LATEST_MOTION_RECORDING,
         DOWNLOAD_LATEST_MOTION_RECORDING_SCHEMA,
         "async_download_latest_motion_recording",
+    )
+
+    _LOGGER.debug("Creating Service: Trigger Recording")
+    platform.async_register_entity_service(
+        SERVICE_TRIGGER_RECORDING,
+        TRIGGER_RECORDING_SCHEMA,
+        "async_trigger_recording",
     )
 
 
@@ -156,6 +165,14 @@ class SecuritySpyCamera(SecuritySpyEntity, Camera):
             await self.hass.async_add_executor_job(_write_file, filename, video)
         except OSError as err:
             _LOGGER.error("Can't write video to file: %s", err)
+
+    async def async_trigger_recording(self):
+        """Trigger motion detection/recording for this camera."""
+        _LOGGER.debug("Triggering recording for Camera: %s", self._name)
+        if not await self.secspy.trigger_motion_recording(self._device_id):
+            _LOGGER.error("Failed to trigger recording for Camera: %s", self._name)
+            return
+        _LOGGER.debug("Successfully triggered recording for Camera: %s", self._name)
 
     async def async_enable_motion_detection(self):
         """Enable motion detection in camera."""

@@ -297,6 +297,27 @@ class SecSpyServer:
         self._processed_data[camera_id][json_id] = enabled
         return True
 
+    async def trigger_motion_recording(self, camera_id: str) -> bool:
+        """Triggers motion detection/recording for a camera.
+        Valid input for camera_id is a valid camera number or -1 for all cameras
+        """
+        trigger_uri = f"{self._base_url}/++triggermd?cameraNum={camera_id}&auth={self._token}"
+
+        response = await self.req.get(
+            trigger_uri,
+            headers=self.headers,
+            ssl=False,
+        )
+        if response.status != 200:
+            _LOGGER.error(
+                "Trigger Recording Request failed: %s - Reason: %s",
+                response.status,
+                response.reason,
+            )
+            return False
+
+        return True
+
     async def enable_schedule_preset(self, schedule_id: str) -> bool:
         """Enables a schedule preset.
         Valid inputs for schedule_id is a valid preset id
